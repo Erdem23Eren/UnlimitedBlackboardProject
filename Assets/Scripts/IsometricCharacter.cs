@@ -9,7 +9,9 @@ public class IsometricCharacter : MonoBehaviour
     public float moveSpeed = 5f; // Hareket hýzý
 
     [Header("References")]
-    public Tilemap tilemap; // Haritanýn tilemap'i
+    public List<Tilemap> allTilemaps = new List<Tilemap>(); // Haritanýn tilemap'i
+
+    private Tilemap mainTilemap;
 
     public GameObject deathParticles;
 
@@ -20,11 +22,30 @@ public class IsometricCharacter : MonoBehaviour
 
     void Start()
     {
-        if (tilemap != null)
+        UpdateMainTilemapRef();
+
+        if (mainTilemap != null)
         {
-            currentGridPosition = tilemap.WorldToCell(transform.position);
+            currentGridPosition = mainTilemap.WorldToCell(transform.position);
             SnapToTileCenter();
         }
+    }
+
+    public void UpdateMainTilemapRef()
+    {
+        if (allTilemaps.Count > 0 && allTilemaps[0] != null)
+            mainTilemap = allTilemaps[0];
+    }
+
+    //Herhangi bir katmanda Tile var mý?
+    public bool HasTileOnAnyLayer(Vector3Int pos)
+    {
+        foreach (var tm in allTilemaps)
+        {
+            if (tm != null && tm.gameObject.activeSelf && tm.HasTile(pos))
+                return true;
+        }
+        return false;
     }
 
     void Update()
@@ -56,11 +77,10 @@ public class IsometricCharacter : MonoBehaviour
         if (isMoving)
             return false;
 
-        // Z deðerini 0 yap
         targetGridPosition.z = 0;
 
         // Hedef pozisyonda tile var mý kontrol et
-        if (!tilemap.HasTile(targetGridPosition))
+        if (!HasTileOnAnyLayer(targetGridPosition))
             return false;
 
         // Hareket edilebilir tile'lardan biri mi kontrol et
@@ -71,7 +91,7 @@ public class IsometricCharacter : MonoBehaviour
 
         // Hareketi baþlat
         currentGridPosition = targetGridPosition;
-        targetWorldPosition = tilemap.GetCellCenterWorld(targetGridPosition);
+        targetWorldPosition = mainTilemap.GetCellCenterWorld(targetGridPosition);
         isMoving = true;
 
         shouldGiveMovementPoint = !isAttackMove;
@@ -86,27 +106,18 @@ public class IsometricCharacter : MonoBehaviour
         Queue<Vector3Int> toExplore = new Queue<Vector3Int>();
         Dictionary<Vector3Int, int> distances = new Dictionary<Vector3Int, int>();
 
-        if (!tilemap.HasTile(currentGridPosition))
+        UpdateMainTilemapRef();
+
+
+        if (!HasTileOnAnyLayer(currentGridPosition))
         {
-            Debug.LogWarning("Karakter tile üzerinde deðil!");
-            BoundsInt bounds = tilemap.cellBounds;
-            for (int x = bounds.xMin; x < bounds.xMax; x++)
-            {
-                for (int y = bounds.yMin; y < bounds.yMax; y++)
-                {
-                    Vector3Int testPos = new Vector3Int(x, y, 0);
-                    if (tilemap.HasTile(testPos))
-                    {
-                        currentGridPosition = testPos;
-                        break;
-                    }
-                }
-            }
+            Debug.LogWarning("Karakter boþlukta!");
         }
 
-        // Baþlangýç noktasý
+
         toExplore.Enqueue(currentGridPosition);
         distances[currentGridPosition] = 0;
+
 
         while (toExplore.Count > 0)
         {
@@ -116,13 +127,12 @@ public class IsometricCharacter : MonoBehaviour
             if (currentDistance >= moveRange)
                 continue;
 
-            // Ýzometrik piramit için 4 çapraz komþu
             Vector3Int[] neighbors = new Vector3Int[]
             {
-                new Vector3Int(current.x - 2, current.y - 1, 0),  // Sol-alt çapraz
-                new Vector3Int(current.x - 1, current.y - 2, 0),  // Sað-alt çapraz
-                new Vector3Int(current.x + 1, current.y + 2, 0),  // Sol-üst çapraz
-                new Vector3Int(current.x + 2, current.y + 1, 0),  // Sað-üst çapraz
+            new Vector3Int(current.x - 2, current.y - 1, 0),
+            new Vector3Int(current.x - 1, current.y - 2, 0),
+            new Vector3Int(current.x + 1, current.y + 2, 0),
+            new Vector3Int(current.x + 2, current.y + 1, 0),
             };
 
             foreach (Vector3Int neighbor in neighbors)
@@ -130,14 +140,14 @@ public class IsometricCharacter : MonoBehaviour
                 if (distances.ContainsKey(neighbor))
                     continue;
 
-                if (!tilemap.HasTile(neighbor))
+                bool hasTile = HasTileOnAnyLayer(neighbor);
+
+                if (!hasTile)
                     continue;
 
                 int newDistance = currentDistance + 1;
                 distances[neighbor] = newDistance;
                 reachable.Add(neighbor);
-
-                Debug.Log($"Eriþilebilir: {neighbor}, offset: ({neighbor.x - current.x}, {neighbor.y - current.y}), mesafe: {newDistance}");
 
                 if (newDistance < moveRange)
                 {
@@ -146,14 +156,14 @@ public class IsometricCharacter : MonoBehaviour
             }
         }
 
-        Debug.Log($"Toplam eriþilebilir tile sayýsý: {reachable.Count}");
         return reachable;
     }
 
     // Karakteri mevcut tile'ýn ortasýna hizala
     void SnapToTileCenter()
     {
-        transform.position = tilemap.GetCellCenterWorld(currentGridPosition);
+        if(mainTilemap != null)
+        transform.position = mainTilemap.GetCellCenterWorld(currentGridPosition);
     }
 
     public Vector3Int GetCurrentGridPosition()
